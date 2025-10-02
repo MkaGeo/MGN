@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Информация об объектах культурного наследия</title>
+    <title>Информация об объектах культурного наследия (ОКН)</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -155,9 +155,6 @@
         .status-error {
             background-color: #e74c3c;
         }
-        .status-unknown {
-            background-color: #f39c12;
-        }
     </style>
 </head>
 <body>
@@ -171,8 +168,8 @@
         
         <div class="cookie-section">
             <h3>Управление cookies</h3>
-            <p>Cookies необходимы для доступа к API. Если запросы не работают, обновите cookies:</p>
-            <textarea id="cookieInput" placeholder="Введите cookies в формате: name1=value1; name2=value2; ..."></textarea>
+            <p>Для доступа к API необходимо использовать полную строку cookies. Вставьте ее ниже:</p>
+            <textarea id="cookieInput" placeholder="Введите полную строку cookies в формате: name1=value1; name2=value2; ...">mos_id=Cg+IAmjbkG0pUlnGEdaTAgA=; _ym_uid=1743964869293872332; _ym_d=1759231760; session-cookie=186aa0acd33129bba05b710abeb261f5965b27f30a15d99da5951de9e099e674842d684ebe996e07168eff8329ab5af6; back_sid=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjgwMzBkYmJjLTkyNmYtNDg0Mi1hZmJlLTA0ZWM2NGJmYWVlZCIsInVzZXJuYW1lIjoicHVzY2hpbmF6diIsImlhdCI6MTc1OTM5NTI3MywiZXhwIjoxNzg4MTk1MjczLCJpc3MiOiJBSVMgTUdOIn0.lL1714myFg9IeM5aNqVmScD06l_YilVB1KeM-3tF7aE; sid=d75cbed4507890942cd83a479833a7a7e9900f1d6797cfb0faa656935685fd48; AuthSession=cHVzY2hpbmF6djo2OERFM0RDOTrd7ap6s6m7PwOcpuWVwI8LqRdvlQ</textarea>
             <div style="margin-top: 10px;">
                 <button id="saveCookiesBtn">Сохранить cookies</button>
                 <button id="checkCookiesBtn">Проверить cookies</button>
@@ -237,7 +234,7 @@
                 if (cookies) {
                     testCookies(cookies);
                 } else {
-                    showCookieStatus('Cookies не найдены!', 'error');
+                    showCookieStatus('Cookies не найдены! Сохраните cookies сначала.', 'error');
                 }
             });
             
@@ -265,10 +262,10 @@
                 resultContent.innerHTML = '';
             });
             
-            // Функция проверки cookies
+            // Функция проверки cookies :cite[1]:cite[5]
             async function testCookies(cookies) {
                 loadingIndicator.style.display = 'block';
-                fetchDataBtn.disabled = true;
+                checkCookiesBtn.disabled = true;
                 
                 try {
                     const testUrl = `${API_BASE_URL}/b8e6b14a-56f9-11e2-965f-005056806bb6`;
@@ -279,47 +276,53 @@
                             'Accept': 'application/json',
                             'Cookie': cookies
                         },
-                        credentials: 'include'
+                        credentials: 'include' // Важно для CORS с cookies :cite[8]
                     });
                     
                     if (response.ok) {
-                        const data = await response.json();
-                        showCookieStatus('✓ Cookies работают корректно! Данные получены.', 'success');
+                        showCookieStatus('✓ Cookies работают корректно!', 'success');
                     } else if (response.status === 401) {
                         showCookieStatus('✗ Cookies недействительны или устарели!', 'error');
                     } else {
-                        showCookieStatus(`Ошибка: ${response.status} ${response.statusText}`, 'error');
+                        showCookieStatus(`Ошибка HTTP: ${response.status}`, 'error');
                     }
                 } catch (error) {
-                    showCookieStatus(`Ошибка сети: ${error.message}`, 'error');
+                    if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+                        showCookieStatus('✗ Ошибка CORS или сети. Проверьте подключение.', 'error');
+                    } else {
+                        showCookieStatus(`Ошибка: ${error.message}`, 'error');
+                    }
                 } finally {
                     loadingIndicator.style.display = 'none';
-                    fetchDataBtn.disabled = false;
+                    checkCookiesBtn.disabled = false;
                 }
             }
             
-            // Функция получения данных об ОКН
+            // Функция получения данных об ОКН :cite[1]:cite[8]
             async function fetchOKNData(oknId, cookies) {
                 loadingIndicator.style.display = 'block';
                 resultContainer.style.display = 'none';
                 fetchDataBtn.disabled = true;
                 
                 try {
-                    const url = `${API_BASE_URL}/${oknId}`;
+                    const url = `${API_BASE_URL}/${encodeURIComponent(oknId)}`;
                     
                     const response = await fetch(url, {
                         method: 'GET',
                         headers: {
                             'Accept': 'application/json',
                             'Cookie': cookies,
-                            'Origin': window.location.origin || 'http://localhost'
+                            'Content-Type': 'application/json'
                         },
-                        credentials: 'include'
+                        credentials: 'include' // Ключевое исправление для CORS :cite[8]
                     });
                     
+                    // Проверка статуса ответа :cite[1]
                     if (!response.ok) {
                         if (response.status === 401) {
                             throw new Error('Неверные или устаревшие cookies. Пожалуйста, обновите cookies.');
+                        } else if (response.status === 404) {
+                            throw new Error('ОКН с указанным идентификатором не найден.');
                         } else {
                             throw new Error(`Ошибка сервера: ${response.status} ${response.statusText}`);
                         }
