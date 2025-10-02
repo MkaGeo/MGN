@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поиск информации об ОКН и Территориях</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .tabs {
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            background: #f1f1f1;
+            display: inline-block;
+        }
+        .tab-button.active {
+            background: #fff;
+            border-bottom: 1px solid #fff;
+        }
+        .tab-content {
+            display: none;
+            border: 1px solid #ccc;
+            padding: 20px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 20px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0055aa;
+        }
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .result-area {
+            margin-top: 20px;
+            white-space: pre-wrap;
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .error {
+            color: #d00;
+            margin-top: 10px;
+        }
+        .loading {
+            color: #0066cc;
+            margin-top: 10px;
+        }
+        .section {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #fff;
+            border-left: 4px solid #0066cc;
+        }
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Информация об ОКН и Территориях</h1>
+    
+    <div class="tabs">
+        <div class="tab-button active" data-tab="okn-tab">ОКН</div>
+        <div class="tab-button" data-tab="area-tab">Территории</div>
+    </div>
+    
+    <div id="okn-tab" class="tab-content active">
+        <h2>Поиск информации об объекте культурного наследия (ОКН)</h2>
+        
+        <div class="input-group">
+            <label for="okn-id">Идентификатор ОКН:</label>
+            <input type="text" id="okn-id" value="b8e6b14a-56f9-11e2-965f-005056806bb6">
+        </div>
+        
+        <button id="fetch-okn-main">Получить основную информацию</button>
+        <button id="fetch-okn-all">Получить полную информацию</button>
+        
+        <div id="okn-result" class="result-area"></div>
+    </div>
+    
+    <div id="area-tab" class="tab-content">
+        <h2>Поиск информации о территории</h2>
+        
+        <div class="input-group">
+            <label for="area-id">Идентификатор территории:</label>
+            <input type="text" id="area-id" value="55969dfd-5b4e-11e2-965f-005056806bb6">
+        </div>
+        
+        <button id="fetch-area-main">Получить основную информацию</button>
+        <button id="fetch-area-all">Получить полную информацию</button>
+        
+        <div id="area-result" class="result-area"></div>
+    </div>
+
+    <script>
+        // Элементы DOM
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        const oknIdInput = document.getElementById('okn-id');
+        const areaIdInput = document.getElementById('area-id');
+        
+        const fetchOknMainBtn = document.getElementById('fetch-okn-main');
+        const fetchOknAllBtn = document.getElementById('fetch-okn-all');
+        const fetchAreaMainBtn = document.getElementById('fetch-area-main');
+        const fetchAreaAllBtn = document.getElementById('fetch-area-all');
+        
+        const oknResult = document.getElementById('okn-result');
+        const areaResult = document.getElementById('area-result');
+        
+        // Переключение вкладок
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const tabId = button.getAttribute('data-tab');
+                
+                // Убираем активный класс у всех кнопок и контента
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                tabContents.forEach(content => content.classList.remove('active'));
+                
+                // Добавляем активный класс текущей кнопке и контенту
+                button.classList.add('active');
+                document.getElementById(tabId).classList.add('active');
+            });
+        });
+        
+        // Базовые URL для API
+        const BASE_URL = 'https://mgn.mos.ru/_api/postgres/grnkn';
+        
+        // Общая функция для выполнения запросов
+        async function fetchData(url, options = {}) {
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    credentials: 'include', // Включаем куки
+                    headers: {
+                        'Accept': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Ошибка HTTP: ${response.status}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                console.error('Ошибка при выполнении запроса:', error);
+                throw error;
+            }
+        }
+        
+        // Функция для форматирования вывода JSON
+        function formatJSON(data) {
+            return JSON.stringify(data, null, 2);
+        }
+        
+        // Функция для создания секции с данными
+        function createSection(title, content) {
+            const section = document.createElement('div');
+            section.className = 'section';
+            
+            const titleEl = document.createElement('div');
+            titleEl.className = 'section-title';
+            titleEl.textContent = title;
+            
+            const contentEl = document.createElement('pre');
+            contentEl.textContent = typeof content === 'string' ? content : formatJSON(content);
+            
+            section.appendChild(titleEl);
+            section.appendChild(contentEl);
+            
+            return section;
+        }
+        
+        // Функции для работы с ОКН
+        async function fetchOknMain() {
+            const oknId = oknIdInput.value.trim();
+            if (!oknId) {
+                alert('Введите идентификатор ОКН');
+                return;
+            }
+            
+            oknResult.innerHTML = '<div class="loading">Загрузка основной информации об ОКН...</div>';
+            
+            try {
+                const url = `${BASE_URL}/okn/${oknId}`;
+                const data = await fetchData(url);
+                
+                oknResult.innerHTML = '';
+                oknResult.appendChild(createSection('Основная информация об ОКН', data));
+            } catch (error) {
+                oknResult.innerHTML = `<div class="error">Ошибка: ${error.message}</div>`;
+            }
+        }
+        
+        async function fetchOknAll() {
+            const oknId = oknIdInput.value.trim();
+            if (!oknId) {
+                alert('Введите идентификатор ОКН');
+                return;
+            }
+            
+            oknResult.innerHTML = '<div class="loading">Загрузка полной информации об ОКН...</div>';
+            
+            try {
+                // Определяем endpoints для ОКН
+                const endpoints = [
+                    { name: 'Основная информация', path: `/okn/${oknId}` },
+                    { name: 'Менеджеры', path: `/okn/${oknId}/managers` },
+                    { name: 'Объекты недвижимости', path: `/okn/${oknId}/realties` },
+                    { name: 'Документы', path: `/okn/${oknId}/docs` },
+                    { name: 'Дата создания', path: `/okn/${oknId}/from_date` },
+                    { name: 'Участки', path: `/okn/${oknId}/areas` },
+                    { name: 'Членские правления', path: `/okn/${oknId}/memboards` },
+                    { name: 'Вывески', path: `/okn/${oknId}/signboards` },
+                    { name: 'Охранные доски', path: `/okn/${oknId}/securityboards` },
+                    { name: 'Функциональности', path: `/okn/${oknId}/functionalities` },
+                    { name: 'Типы ОАН', path: `/okn/${oknId}/oan_types` }
+                ];
+                
+                oknResult.innerHTML = '';
+                
+                // Выполняем запросы последовательно
+                for (const endpoint of endpoints) {
+                    try {
+                        const data = await fetchData(`${BASE_URL}${endpoint.path}`);
+                        oknResult.appendChild(createSection(endpoint.name, data));
+                    } catch (error) {
+                        const errorSection = createSection(endpoint.name, `Ошибка: ${error.message}`);
+                        errorSection.style.borderLeftColor = '#d00';
+                        oknResult.appendChild(errorSection);
+                    }
+                }
+            } catch (error) {
+                oknResult.innerHTML = `<div class="error">Ошибка: ${error.message}</div>`;
+            }
+        }
+        
+        // Функции для работы с территориями
+        async function fetchAreaMain() {
+            const areaId = areaIdInput.value.trim();
+            if (!areaId) {
+                alert('Введите идентификатор территории');
+                return;
+            }
+            
+            areaResult.innerHTML = '<div class="loading">Загрузка основной информации о территории...</div>';
+            
+            try {
+                const url = `${BASE_URL}/area/${areaId}`;
+                const data = await fetchData(url);
+                
+                areaResult.innerHTML = '';
+                areaResult.appendChild(createSection('Основная информация о территории', data));
+            } catch (error) {
+                areaResult.innerHTML = `<div class="error">Ошибка: ${error.message}</div>`;
+            }
+        }
+        
+        async function fetchAreaAll() {
+            const areaId = areaIdInput.value.trim();
+            if (!areaId) {
+                alert('Введите идентификатор территории');
+                return;
+            }
+            
+            areaResult.innerHTML = '<div class="loading">Загрузка полной информации о территории...</div>';
+            
+            try {
+                // Определяем endpoints для территорий
+                const endpoints = [
+                    { name: 'Основная информация', path: `/area/${areaId}` },
+                    { name: 'ОКН на территории', path: `/area/${areaId}/okns` },
+                    { name: 'Документы', path: `/area/${areaId}/docs` },
+                    { name: 'Дочерние территории', path: `/area/${areaId}/childs` },
+                    { name: 'Объекты капитального строительства', path: `/area/${areaId}/oks` }
+                ];
+                
+                areaResult.innerHTML = '';
+                
+                // Выполняем запросы последовательно
+                for (const endpoint of endpoints) {
+                    try {
+                        const data = await fetchData(`${BASE_URL}${endpoint.path}`);
+                        areaResult.appendChild(createSection(endpoint.name, data));
+                    } catch (error) {
+                        const errorSection = createSection(endpoint.name, `Ошибка: ${error.message}`);
+                        errorSection.style.borderLeftColor = '#d00';
+                        areaResult.appendChild(errorSection);
+                    }
+                }
+                
+                // Дополнительные общие запросы
+                try {
+                    const areaTypes = await fetchData(`${BASE_URL}/area/type/_all?limit=100`);
+                    areaResult.appendChild(createSection('Типы территорий', areaTypes));
+                } catch (error) {
+                    const errorSection = createSection('Типы территорий', `Ошибка: ${error.message}`);
+                    errorSection.style.borderLeftColor = '#d00';
+                    areaResult.appendChild(errorSection);
+                }
+                
+                try {
+                    const icvCategories = await fetchData(`${BASE_URL}/icv_category/_all`);
+                    areaResult.appendChild(createSection('Категории ИЦВ', icvCategories));
+                } catch (error) {
+                    const errorSection = createSection('Категории ИЦВ', `Ошибка: ${error.message}`);
+                    errorSection.style.borderLeftColor = '#d00';
+                    areaResult.appendChild(errorSection);
+                }
+                
+                try {
+                    const historicalTerritories = await fetchData(`${BASE_URL}/historical_territory/_all`);
+                    areaResult.appendChild(createSection('Исторические территории', historicalTerritories));
+                } catch (error) {
+                    const errorSection = createSection('Исторические территории', `Ошибка: ${error.message}`);
+                    errorSection.style.borderLeftColor = '#d00';
+                    areaResult.appendChild(errorSection);
+                }
+                
+            } catch (error) {
+                areaResult.innerHTML = `<div class="error">Ошибка: ${error.message}</div>`;
+            }
+        }
+        
+        // Назначение обработчиков событий
+        fetchOknMainBtn.addEventListener('click', fetchOknMain);
+        fetchOknAllBtn.addEventListener('click', fetchOknAll);
+        fetchAreaMainBtn.addEventListener('click', fetchAreaMain);
+        fetchAreaAllBtn.addEventListener('click', fetchAreaAll);
+    </script>
+</body>
+</html>
